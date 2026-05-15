@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hesburgh Libraries — Perceived vs. Desired Service Scores</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f4f0;
+    --text-primary: #1a1a1a;
+    --text-secondary: #555550;
+    --border: rgba(0,0,0,0.12);
+    --border-strong: rgba(0,0,0,0.25);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-primary: #1e1e1c;
+      --bg-secondary: #2a2a28;
+      --text-primary: rgba(255,255,255,0.9);
+      --text-secondary: rgba(255,255,255,0.6);
+      --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.25);
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 2rem 1.5rem;
+    min-height: 100vh;
+  }
+
+  .page-header { max-width: 960px; margin: 0 auto 2rem; }
+  .page-header h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .page-header p { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+
+  .card {
+    max-width: 960px;
+    margin: 0 auto;
+    background: var(--bg-primary);
+    border-radius: 12px;
+    border: 0.5px solid var(--border);
+    padding: 1.5rem;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 0.75rem;
+  }
+  .row-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    min-width: 60px;
+  }
+  .divider {
+    width: 100%;
+    height: 0.5px;
+    background: var(--border);
+    margin: 0.5rem 0 1rem;
+  }
+
+  .seg-btn {
+    font-size: 13px;
+    padding: 5px 13px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .seg-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+  .seg-btn.active {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    font-weight: 500;
+  }
+
+  .legend {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 1rem;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+  .chart-container { position: relative; width: 100%; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Hesburgh Libraries Assessment Survey 2026</h1>
+  <p>Perceived vs. desired service scores. Light blue dots = perceived mean; gold dots = desired mean. Shaded bar shows the gap.</p>
+</div>
+
+<div class="card">
+
+  <div class="row" id="viewRow">
+    <span class="row-label">View</span>
+  </div>
+
+  <div class="divider" id="divider1"></div>
+
+  <div class="row" id="tabRow" style="display:none">
+    <span class="row-label" id="tabLabel">Subscale</span>
+  </div>
+  <div class="divider" id="divider2" style="display:none"></div>
+
+  <div class="legend" id="legend">
+    <span><span class="dot" style="background:#c1cddd"></span>Perceived</span>
+    <span><span class="dot" style="background:#d39f10"></span>Desired</span>
+  </div>
+
+  <div class="chart-container" id="chartWrap">
+    <canvas id="dbChart" role="img" aria-label="Dumbbell chart showing perceived and desired service scores"></canvas>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<script>
+Chart.register(ChartDataLabels);
+
+var PERC_COLOR = '#c1cddd';
+var DES_COLOR  = '#d39f10';
+var PERC_LABEL = '#7a91aa';
+var DES_LABEL  = '#8a6510';
+
+/* ═══════════════════════════════════════════
+   PATRON GROUP VIEW — all 32 items
+═══════════════════════════════════════════ */
+var PATRON_POPS = ['Faculty','Staff','Postdocs','Undergrad Students','Grad Students','Prof. Students','Other'];
+
+var PATRON_ITEMS = [
+  'AS-1 Instill confidence in users','AS-2 Individual attention','AS-3 Consistently courteous',
+  'AS-5 Knowledge to answer questions','AS-6 Caring fashion','AS-7 Understand user needs',
+  'AS-8 Willingness to help','AS-9 Dependability with problems',
+  'IC-1 Digital resources remote access','IC-2 Website for self-service','IC-3 Print materials',
+  'IC-4 Digital materials','IC-5 Specialized software/equipment','IC-6 Easy-to-use access tools',
+  'LP-1 Inspires study & learning','LP-2 Quiet individual space','LP-4 Destination for study/research',
+  'LP-5 Community/group space',
+  'ND-1 Available when needed','ND-2 Reference desk','ND-3 OIT service desk',
+  'ND-4 Digital scholarship services','ND-5 CurateND repository','ND-6 Rare/unique collections',
+  'ND-7 Archival material','ND-8 Website accessibility','ND-9 Space accessibility',
+  'ND-10 Library workshops','ND-11 Navari Center for Digital Scholarship',
+  'ND-12 Clean & comfortable','ND-13 Library signage','ND-14 Cafe'
+];
+
+var PATRON_PERC = [
+  [8.21,8.00,8.63,8.15,8.51,8.01,8.53,8.26,7.97,7.36,7.58,7.80,7.71,7.70,7.85,7.85,7.88,7.99,8.11,7.44,7.34,7.66,6.74,7.35,7.47,7.94,7.95,6.78,7.36,8.30,7.74,6.23],
+  [8.16,8.04,8.45,8.25,8.42,8.22,8.40,8.21,7.98,7.60,8.04,8.02,8.14,8.00,8.21,8.15,8.40,8.21,8.14,8.05,7.89,7.87,7.75,7.96,8.13,8.14,8.19,7.74,8.01,8.45,8.02,7.06],
+  [8.20,7.72,8.62,8.11,8.63,8.38,8.65,8.18,7.87,7.82,8.14,7.87,7.95,8.20,7.97,8.00,8.43,8.02,8.26,7.92,8.17,7.82,7.89,8.03,8.09,8.55,7.89,7.32,8.10,8.40,8.22,6.53],
+  [7.63,6.88,8.27,7.82,8.20,7.94,8.20,7.82,7.70,7.47,7.75,7.73,7.73,7.74,7.66,7.48,8.10,7.95,7.69,7.41,7.44,7.36,7.14,7.49,7.67,7.80,7.76,6.86,7.05,8.07,7.62,7.08],
+  [8.07,7.65,8.42,8.18,8.36,8.23,8.42,8.19,8.09,7.74,7.96,8.03,7.87,8.00,7.64,7.45,8.00,8.06,8.19,7.77,7.98,7.71,7.61,7.98,7.83,8.21,7.88,7.42,7.99,8.22,7.99,6.75],
+  [8.08,7.41,8.29,7.97,8.49,8.40,8.39,8.26,7.89,7.80,8.05,7.68,8.00,7.97,7.98,7.57,8.27,8.13,7.90,8.18,7.97,7.87,7.47,7.77,7.68,7.75,8.16,7.88,7.82,8.29,8.03,7.27],
+  [8.00,7.42,8.38,7.92,8.17,7.73,8.33,8.25,8.18,8.00,7.67,7.83,8.25,7.82,8.00,8.23,8.45,8.09,7.85,7.45,7.91,8.36,7.86,8.00,7.57,8.00,8.09,7.56,7.88,8.00,7.83,6.90]
+];
+
+var PATRON_DES = [
+  [8.55,8.32,8.66,8.61,8.65,8.59,8.66,8.48,8.76,8.68,8.40,8.67,8.45,8.62,8.45,8.21,8.46,7.73,8.47,7.87,8.22,8.46,7.48,7.85,8.01,8.35,8.08,7.47,7.92,8.61,8.48,7.85],
+  [8.37,8.19,8.64,8.49,8.59,8.53,8.61,8.47,8.55,8.45,8.33,8.45,8.43,8.54,8.52,8.47,8.62,8.38,8.46,8.38,8.29,8.25,8.14,8.08,8.32,8.43,8.40,8.20,8.21,8.66,8.53,8.07],
+  [8.36,7.94,8.65,8.48,8.63,8.69,8.73,8.49,8.72,8.69,8.51,8.71,8.67,8.61,8.70,8.68,8.74,8.33,8.67,8.14,8.67,8.69,8.43,8.72,8.66,8.70,8.60,8.10,8.52,8.80,8.68,7.79],
+  [7.77,7.02,8.37,8.10,8.34,8.20,8.37,8.17,8.32,8.23,8.25,8.24,8.16,8.32,8.44,8.40,8.58,8.47,8.11,7.75,8.02,8.00,7.35,7.39,7.65,8.05,7.88,7.23,7.25,8.60,8.30,8.31],
+  [8.23,7.81,8.46,8.43,8.46,8.39,8.45,8.48,8.68,8.44,8.39,8.58,8.35,8.45,8.46,8.49,8.61,8.24,8.49,8.26,8.39,8.30,8.14,8.24,8.23,8.52,8.25,7.85,8.12,8.62,8.43,7.98],
+  [8.23,7.59,8.48,8.18,8.46,8.54,8.33,8.45,8.40,8.42,8.50,8.19,8.22,8.26,8.35,8.45,8.63,8.24,8.23,8.34,8.20,8.27,7.90,7.70,7.83,8.07,8.42,7.89,7.94,8.64,8.21,8.14],
+  [8.31,8.23,8.54,8.00,8.50,8.00,8.00,8.50,8.36,8.23,8.15,8.31,8.46,8.33,8.38,8.69,8.58,8.18,7.69,8.00,8.36,8.45,8.43,8.36,7.57,8.00,8.30,7.70,8.25,8.42,8.25,8.30]
+];
+
+/* ═══════════════════════════════════════════
+   COLLEGE DATA
+   Each college: [affect_perc, affect_des, ic_perc, ic_des, lp_perc, lp_des]
+═══════════════════════════════════════════ */
+
+/* Faculty / Staff / Postdocs */
+var FSP_COLLEGES = [
+  'College of Arts & Letters',
+  'College of Engineering',
+  'College of Science',
+  'Hesburgh Libraries',
+  'Keough School of Global Affairs',
+  'Law School',
+  'Mendoza College of Business',
+  'School of Architecture'
+];
+var FSP_DATA = [
+  [8.20, 8.58, 7.69, 8.67, 7.74, 8.25],
+  [8.58, 8.61, 7.89, 8.60, 8.30, 8.36],
+  [8.40, 8.61, 7.95, 8.64, 8.32, 8.48],
+  [8.23, 8.64, 7.69, 8.65, 8.11, 8.50],
+  [8.29, 8.47, 7.84, 8.56, 8.14, 8.50],
+  [7.35, 8.35, 7.09, 8.23, 7.61, 8.21],
+  [8.52, 8.53, 8.01, 8.56, 8.25, 8.55],
+  [8.75, 8.86, 8.36, 8.76, 8.43, 8.44]
+];
+
+/* Students */
+var STU_COLLEGES = [
+  'College of Arts & Letters',
+  'College of Engineering',
+  'College of Science',
+  'Keough School of Global Affairs',
+  'Law School',
+  'Mendoza College of Business',
+  'School of Architecture'
+];
+var STU_DATA = [
+  [8.01, 8.22, 7.79, 8.44, 7.84, 8.49],
+  [7.73, 7.75, 7.58, 8.15, 7.69, 8.40],
+  [7.84, 8.08, 7.75, 8.29, 7.79, 8.47],
+  [8.00, 8.18, 7.64, 8.41, 7.17, 8.70],
+  [8.15, 8.09, 7.93, 8.35, 7.86, 8.35],
+  [7.71, 7.97, 7.58, 8.22, 7.76, 8.41],
+  [7.89, 7.99, 7.88, 8.35, 8.09, 8.51]
+];
+
+/* Subscale index map: 0=affect, 1=ic, 2=lp
+   Each subscale: percIdx = sub*2, desIdx = sub*2+1 */
+var SUBSCALES = [
+  { label: 'Affect of Service',    percIdx: 0, desIdx: 1 },
+  { label: 'Information Control',  percIdx: 2, desIdx: 3 },
+  { label: 'Library as Place',     percIdx: 4, desIdx: 5 }
+];
+
+/* ═══════════════════════════════════════════
+   State
+═══════════════════════════════════════════ */
+var currentView     = 'patron';  // 'patron' | 'fsp' | 'stu'
+var currentPatronTab = 0;        // index into PATRON_POPS
+var currentSubscale  = 0;        // index into SUBSCALES (for college views)
+var chart = null;
+
+/* ═══════════════════════════════════════════
+   Build view selector (top row)
+═══════════════════════════════════════════ */
+var VIEWS = [
+  { id: 'patron', label: 'By patron group' },
+  { id: 'fsp',    label: 'Faculty / Staff / Postdocs by college' },
+  { id: 'stu',    label: 'Students by college' }
+];
+
+function buildViewRow() {
+  var row = document.getElementById('viewRow');
+  VIEWS.forEach(function(v) {
+    var btn = document.createElement('button');
+    btn.className = 'seg-btn' + (v.id === currentView ? ' active' : '');
+    btn.textContent = v.label;
+    btn.addEventListener('click', function() {
+      if (currentView === v.id) return;
+      document.querySelectorAll('#viewRow .seg-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentView = v.id;
+      currentPatronTab = 0;
+      currentSubscale  = 0;
+      refreshSecondRow();
+      render();
+    });
+    row.appendChild(btn);
+  });
+}
+
+/* ═══════════════════════════════════════════
+   Second row: patron tabs OR subscale tabs
+═══════════════════════════════════════════ */
+function refreshSecondRow() {
+  var tabRow  = document.getElementById('tabRow');
+  var div2    = document.getElementById('divider2');
+  var tabLabel = document.getElementById('tabLabel');
+  tabRow.innerHTML = '';
+
+  if (currentView === 'patron') {
+    tabRow.style.display  = 'none';
+    div2.style.display    = 'none';
+    return;
+  }
+
+  tabRow.style.display = 'flex';
+  div2.style.display   = 'block';
+
+  /* Re-add the label span */
+  var lbl = document.createElement('span');
+  lbl.className = 'row-label';
+  lbl.id = 'tabLabel';
+  lbl.textContent = 'Subscale';
+  tabRow.appendChild(lbl);
+
+  SUBSCALES.forEach(function(s, i) {
+    var btn = document.createElement('button');
+    btn.className = 'seg-btn' + (i === currentSubscale ? ' active' : '');
+    btn.textContent = s.label;
+    btn.addEventListener('click', function() {
+      if (currentSubscale === i) return;
+      document.querySelectorAll('#tabRow .seg-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentSubscale = i;
+      render();
+    });
+    tabRow.appendChild(btn);
+  });
+}
+
+/* ═══════════════════════════════════════════
+   Render
+═══════════════════════════════════════════ */
+function render() {
+  var items, perc, des, ariaLabel;
+
+  if (currentView === 'patron') {
+    items = PATRON_ITEMS;
+    perc  = PATRON_PERC[currentPatronTab];
+    des   = PATRON_DES[currentPatronTab];
+    ariaLabel = 'Dumbbell chart for ' + PATRON_POPS[currentPatronTab] + ' — all survey items';
+
+    /* Rebuild patron tab buttons if needed */
+    var patronTabsEl = document.getElementById('patronTabs');
+    if (!patronTabsEl) {
+      patronTabsEl = document.createElement('div');
+      patronTabsEl.id = 'patronTabs';
+      patronTabsEl.className = 'row';
+      patronTabsEl.style.marginBottom = '1rem';
+      document.getElementById('tabRow').insertAdjacentElement('afterend', patronTabsEl);
+    }
+    patronTabsEl.style.display = 'flex';
+    if (patronTabsEl.children.length === 0) {
+      PATRON_POPS.forEach(function(p, i) {
+        var btn = document.createElement('button');
+        btn.className = 'seg-btn' + (i === 0 ? ' active' : '');
+        btn.textContent = p;
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('#patronTabs .seg-btn').forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          currentPatronTab = i;
+          render();
+        });
+        patronTabsEl.appendChild(btn);
+      });
+    }
+  } else {
+    /* College view — one row per college, showing selected subscale */
+    var colleges = currentView === 'fsp' ? FSP_COLLEGES : STU_COLLEGES;
+    var rawData  = currentView === 'fsp' ? FSP_DATA     : STU_DATA;
+    var sub      = SUBSCALES[currentSubscale];
+
+    items = colleges;
+    perc  = rawData.map(function(d) { return d[sub.percIdx]; });
+    des   = rawData.map(function(d) { return d[sub.desIdx]; });
+    ariaLabel = 'Dumbbell chart — ' + sub.label + ' scores by college (' +
+                (currentView === 'fsp' ? 'Faculty/Staff/Postdocs' : 'Students') + ')';
+
+    /* Hide patron tabs if visible */
+    var patronTabsEl = document.getElementById('patronTabs');
+    if (patronTabsEl) patronTabsEl.style.display = 'none';
+  }
+
+  /* Chart sizing */
+  var n    = items.length;
+  var rowH = currentView === 'patron' ? 42 : 60;
+  var h    = Math.max(n * rowH + 80, 260);
+
+  document.getElementById('chartWrap').style.height = h + 'px';
+  document.getElementById('dbChart').setAttribute('aria-label', ariaLabel);
+
+  var isDark    = matchMedia('(prefers-color-scheme: dark)').matches;
+  var textColor = isDark ? 'rgba(255,255,255,0.8)' : 'rgba(30,30,30,0.85)';
+  var gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
+  var whiteBg   = isDark ? '#1e1e1c' : '#ffffff';
+  var barThick  = currentView === 'patron' ? 6 : 12;
+  var dotR      = currentView === 'patron' ? 7 : 9;
+
+  if (chart) { chart.destroy(); }
+
+  chart = new Chart(document.getElementById('dbChart'), {
+    type: 'bar',
+    data: {
+      labels: items,
+      datasets: [
+        {
+          label: 'Gap',
+          data: items.map(function(_, i) { return [perc[i], des[i]]; }),
+          backgroundColor: items.map(function(_, i) {
+            var diff  = des[i] - perc[i];
+            var alpha = isDark
+              ? Math.min(0.18 + diff * 0.12, 0.50)
+              : Math.min(0.10 + diff * 0.10, 0.35);
+            return 'rgba(211,159,16,' + alpha + ')';
+          }),
+          borderSkipped: false,
+          borderRadius: 2,
+          barThickness: barThick,
+          order: 2,
+          datalabels: { display: false }
+        },
+        {
+          label: 'Perceived',
+          data: perc,
+          type: 'scatter',
+          pointStyle: 'circle',
+          pointRadius: dotR,
+          pointHoverRadius: dotR + 2,
+          backgroundColor: PERC_COLOR,
+          borderColor: whiteBg,
+          borderWidth: 1.5,
+          order: 1,
+          datalabels: {
+            display: true,
+            formatter: function(v) { return v.toFixed(2); },
+            color: PERC_LABEL,
+            font: { size: 11, weight: '500' },
+            anchor: 'center',
+            align: function(ctx) {
+              return perc[ctx.dataIndex] <= des[ctx.dataIndex] ? 'left' : 'right';
+            },
+            offset: 9
+          }
+        },
+        {
+          label: 'Desired',
+          data: des,
+          type: 'scatter',
+          pointStyle: 'circle',
+          pointRadius: dotR,
+          pointHoverRadius: dotR + 2,
+          backgroundColor: DES_COLOR,
+          borderColor: whiteBg,
+          borderWidth: 1.5,
+          order: 0,
+          datalabels: {
+            display: true,
+            formatter: function(v) { return v.toFixed(2); },
+            color: DES_LABEL,
+            font: { size: 11, weight: '500' },
+            anchor: 'center',
+            align: function(ctx) {
+              return des[ctx.dataIndex] >= perc[ctx.dataIndex] ? 'right' : 'left';
+            },
+            offset: 9
+          }
+        }
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { right: 48, left: 4, top: 8, bottom: 8 } },
+      scales: {
+        x: {
+          min: 5.8,
+          max: 9.8,
+          ticks: { color: textColor, font: { size: 12 }, stepSize: 0.5 },
+          grid: { color: gridColor },
+          border: { display: false },
+          title: { display: true, text: 'Mean score (1–9)', color: textColor, font: { size: 12 } }
+        },
+        y: {
+          ticks: {
+            color: textColor,
+            font: { size: currentView === 'patron' ? 12 : 13 },
+            crossAlign: 'far'
+          },
+          grid: { display: false },
+          border: { display: false }
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              if (ctx.datasetIndex === 0) return null;
+              var lbl = ctx.datasetIndex === 1 ? 'Perceived' : 'Desired';
+              return ' ' + lbl + ': ' + ctx.parsed.x.toFixed(2);
+            },
+            afterBody: function(tItems) {
+              var i = tItems[0] && tItems[0].dataIndex;
+              if (i == null) return [];
+              return ['Gap: +' + (des[i] - perc[i]).toFixed(2)];
+            }
+          }
+        },
+        datalabels: {}
+      }
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════
+   Init
+═══════════════════════════════════════════ */
+buildViewRow();
+refreshSecondRow();
+
+/* Pre-create patron tabs row and populate it */
+var patronTabsEl = document.createElement('div');
+patronTabsEl.id = 'patronTabs';
+patronTabsEl.className = 'row';
+patronTabsEl.style.marginBottom = '1rem';
+document.getElementById('divider2').insertAdjacentElement('afterend', patronTabsEl);
+PATRON_POPS.forEach(function(p, i) {
+  var btn = document.createElement('button');
+  btn.className = 'seg-btn' + (i === 0 ? ' active' : '');
+  btn.textContent = p;
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#patronTabs .seg-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    currentPatronTab = i;
+    render();
+  });
+  patronTabsEl.appendChild(btn);
+});
+
+render();
+</script>
+</body>
+</html>
